@@ -300,7 +300,28 @@
                             <goal>report</goal>
                         </goals>
                         <phase>test</phase>
+                        <configuration>
+                            <formats>
+                                <format>XML</format>
+                                <format>HTML</format>
+                                <format>CSV</format>
+                            </formats>
+                        </configuration>
                     </execution>
+<!--                    <execution>-->
+<!--                        <id>report-aggregate</id>-->
+<!--                        <phase>test</phase>-->
+<!--                        <goals>-->
+<!--                            <goal>report-aggregate</goal>-->
+<!--                        </goals>-->
+<!--                        <configuration>-->
+<!--                            <formats>-->
+<!--                                <format>XML</format>-->
+<!--                                <format>HTML</format>-->
+<!--                                <format>CSV</format>-->
+<!--                            </formats>-->
+<!--                        </configuration>-->
+<!--                    </execution>-->
                 </executions>
             </plugin>
             <plugin>
