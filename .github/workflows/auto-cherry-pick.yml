@@ -1,0 +1,88 @@
+name: Auto Cherry-pick to branches
+on:
+  pull_request_target:
+    types:
+      - closed
+      - labeled
+
+env:
+  LABEL_PREFIX: Auto-cherry-pick-to-
+  BOT_NAME: 'auto-cherry-pick.bot'
+  BOT_EMAIL: 'auto-cherry-pick@agentscope.io'
+
+jobs:
+  backport:
+    name: Backport to Target Branch
+    runs-on: ubuntu-latest
+    env:
+      # 将全局 env 传递到 step env 以便 shell 使用
+      CURRENT_LABEL_PREFIX: ${{ env.LABEL_PREFIX }}
+    # 核心判断：
+    # 1. PR 必须已合并
+    # 2. 触发事件是 'closed' (合并瞬间) 或者 'labeled' (且标签符合前缀)
+    if:  >
+      github.event.pull_request.merged == true &&
+      (
+        github.event.action == 'closed' || 
+        (github.event.action == 'labeled' && startsWith(github.event.label.name, env.CURRENT_LABEL_PREFIX))
+      )
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.REPO_TOKEN }}
+          fetch-depth: 0
+
+      - name: Set up Git
+        run: |
+          git config --global user.name '${{ env.BOT_NAME }}'
+          git config --global user.email '${{ env.BOT_EMAIL }}'    
+
+      - name: Cherry-pick to branches
+        env:
+#          CHERRY_PICK_TOKEN: ${{ github.event.label.name }}
+#          COMMIT_MESSAGE: ${{ github.event.head_commit.message }}
+          GITHUB_TOKEN: ${{ secrets.REPO_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          ORIGINAL_SHA: ${{ github.event.pull_request.head.sha }}
+          CURRENT_BRANCH: ${{ github.event.pull_request.base.ref }}
+          # 将全局 env 传递到 step env 以便 shell 使用
+          CURRENT_LABEL_PREFIX: ${{ env.LABEL_PREFIX }}
+        run: |
+          # 获取所有标签 JSON
+          labels="${{ toJSON(github.event.pull_request.labels) }}"
+
+          # 使用 jq 动态提取符合前缀的标签，并去除前缀得到分支名
+          # 注意：这里使用 env 变量 CURRENT_LABEL_PREFIX 进行匹配
+          target_branches=$(echo "$labels" | jq -r --arg prefix "$CURRENT_LABEL_PREFIX" '.[] | select(.name | startswith($prefix)) | .name | ltrimstr($prefix)')
+
+          if [ -z "$target_branches" ]; then
+            echo "ℹ️ No matching backport labels found (prefix: $CURRENT_LABEL_PREFIX). Exiting."
+            exit 0
+          fi
+          
+          echo "✅ Found target branches: $target_branches"
+          
+          # 遍历每个目标分支
+          for branch in $target_branches
+          do
+            if ! git rev-parse --verify "$branch" >/dev/null 2>&1; then
+              echo "::warning title=Branch not found::Skipping branch '$branch' - does not exist"
+              continue
+            fi
+            if [ "$branch" != "$CURRENT_BRANCH" ]; then
+              git checkout "$branch"
+              if git cherry-pick "$ORIGINAL_SHA" -x; then 
+                echo "::notice title=Commit cherry-picked::"$ORIGINAL_SHA" to branch $branch"
+              else
+                echo "::error title=Cannot cherry-pick::"$ORIGINAL_SHA" to branch $branch. Manual procedure required"
+                git cherry-pick --abort 2>/dev/null || true
+                exit 1
+              fi
+              git commit --amend -o -m "$PR_TITLE"  
+              git push origin "$branch"    
+            fi
+          done
+
