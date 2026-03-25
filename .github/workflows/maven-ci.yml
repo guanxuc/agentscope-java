@@ -121,11 +121,27 @@ jobs:
           # -T1: single-threaded build so reactor order is respected (see Linux step).
           & "~\.mvnd\bin\mvnd.cmd" -B -T1 clean verify
 
-      - name: Upload coverage reports to Codecov
+      - name: Generate JaCoCo Badge
         if: runner.os == 'Linux'
-        uses: codecov/codecov-action@v4
+        id: jacoco
+        uses: cicirello/jacoco-badge-generator@v2
         with:
-          token: ${{ secrets.CODECOV_TOKEN }}
-          fail_ci_if_error: true
-          verbose: true
+          jacoco-csv-file: "**/jacoco.csv"
+          fail-if-coverage-less-than: 60
+          generate-summary: true
+          generate-workflow-summary: true
+          generate-coverage-badge: false
+          generate-branches-badge: false
+
+      - name: Print Coverage Results
+        if: runner.os == 'Linux'
+        run: |
+          echo "::notice coverage = ${{ steps.jacoco.outputs.coverage }}"
+          echo "::notice branch coverage = ${{ steps.jacoco.outputs.branches }}"
+          echo "::notice ========================================"
+          echo "::notice 🎉 测试覆盖率统计结果："
+          echo "::notice ----------------------------------------"
+          echo "::notice 💻 Java字节码覆盖率(Instructions): ${{ steps.jacoco.outputs.coverage }}%"
+          echo "::notice 🌿 流程分支覆盖率(Branches):        ${{ steps.coverage-step.outputs.branches }}%"
+          echo "::notice ========================================"
 
